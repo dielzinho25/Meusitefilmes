@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streaming Ferramentas Projeto</title>
+
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:Arial, sans-serif;overflow-x:hidden}
+
+/* LOGIN */
+#loginScreen,#perfilScreen{position:fixed;top:0;left:0;width:100%;height:100%;background:#000;display:flex;justify-content:center;align-items:center;flex-direction:column}
+.login-box{background:#141414;padding:30px;border-radius:12px;text-align:center;width:300px;box-shadow:0 0 15px rgba(0,0,0,0.7)}
+
+/* PERFIL SELECTION */
+#perfilScreen h2{font-size:2em;margin-top:0}
+#perfilList{display:flex;flex-wrap:wrap;gap:30px;justify-content:center;margin-top:30px}
+.perfil-card{cursor:pointer;text-align:center;transition:0.3s;position:relative}
+.perfil-card img{width:100px;height:100px;border-radius:50%;border:3px solid #fff;transition:0.3s;object-fit:cover}
+.perfil-card:hover img{transform:scale(1.2);border-color:#ff3b3f}
+.perfil-card button{position:absolute;top:0;right:0;background:#ff3b3f;color:#fff;border:none;padding:4px 6px;border-radius:50%;cursor:pointer;z-index:2}
+
+/* HEADER */
+header{background:#141414;padding:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,0.7)}
+button{background:red;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;transition:0.3s}
+button:hover{opacity:0.8}
+input{padding:6px;border-radius:6px;border:none}
+
+/* LISTVIEW / CARDS */
+.listview{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px;padding:20px}
+.card{background:#161616;padding:10px;border-radius:10px;position:relative;overflow:hidden;cursor:pointer;transition:0.3s;box-shadow:0 4px 10px rgba(0,0,0,0.5)}
+.card img{width:100%;height:220px;object-fit:cover;border-radius:8px;display:block;margin-bottom:8px;transition:transform 0.3s}
+.card:hover img{transform:scale(1.05)}
+.card h4{margin:4px 0 8px 0;font-size:1em;text-align:center}
+.card p{margin:0;font-size:0.9em;color:#aaa}
+
+/* BOTÃO ASSISTIR */
+.card button.assistir{ width:calc(100% - 20px); margin:0 10px 10px 10px; background:#ff3b3f; color:#fff; border:none; padding:8px 0; border-radius:6px; cursor:pointer; transition:0.3s; }
+.card button.assistir:hover{ opacity:0.9; }
+
+/* FAVORITO REFINADO */
+.fav-top{
+  position:absolute;
+  top:10px;
+  right:10px;
+  width:32px;
+  height:32px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#444;
+  border-radius:50%;
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
+  box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  transition:0.3s;
+  z-index:2;
+}
+.fav-top.favorito{ background:#ff3b3f; }
+.fav-top:hover{ transform: scale(1.2); }
+
+/* PLAYER */
+#modalPlayer{position:fixed;top:0;left:0;width:100%;height:100%;background:linear-gradient(to top, #000 0%, transparent 40%);z-index:999;display:flex;flex-direction:column;justify-content:center;align-items:center}
+#modalPlayer video{width:90%;max-height:85%;margin:auto;object-fit:contain;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.8)}
+#modalPlayer button{position:absolute;top:20px;right:20px;background:#ff3b3f;color:#fff;border:none;padding:10px;border-radius:50%;cursor:pointer;box-shadow:0 0 10px rgba(0,0,0,0.7)}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h2>Entrar</h2>
+    <input id="email" placeholder="Email"><br><br>
+    <input id="senha" type="password" placeholder="Senha"><br><br>
+    <button onclick="login()">Entrar</button>
+    <button onclick="cadastrar()">Cadastrar</button>
+  </div>
+</div>
+
+<!-- PERFIL -->
+<div id="perfilScreen" class="hidden">
+  <h2>Escolha seu perfil</h2>
+  <div id="perfilList"></div>
+  <button onclick="novoPerfilPrompt()">➕ Novo Perfil</button>
+</div>
+
+<!-- HEADER -->
+<header class="hidden" id="mainHeader">
+  <div>🎬 Streaming</div>
+  <input type="text" id="busca" placeholder="Buscar...">
+  <button onclick="verFavoritos()">❤️ Favoritos</button>
+  <button onclick="verRanking()">🔥 Mais Assistidos</button>
+  <google-cast-launcher></google-cast-launcher>
+  <button onclick="logout()">Sair</button>
+</header>
+
+<!-- RECENTES -->
+<h2 style="padding-left:20px;">Últimos Assistidos</h2>
+<div id="recentesList" class="listview"></div>
+
+<!-- CATALOGO -->
+<div id="catalogo" class="listview"></div>
+
+<!-- PLAYER -->
+<div id="modalPlayer" class="hidden">
+  <button onclick="fecharPlayer()">✖</button>
+  <video id="player" controls></video>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const firebaseConfig={apiKey:"AIzaSyDrtZxbKXk7hjlqBL_BLoZMTBdc5iqBCXo",authDomain:"ferramentas-projeto.firebaseapp.com",databaseURL:"https://ferramentas-projeto.firebaseio.com",projectId:"ferramentas-projeto",storageBucket:"ferramentas-projeto.appspot.com",messagingSenderId:"877191590019",appId:"1:877191590019:web:152d4d35bdd3024c53abb6"};
+
+const app=initializeApp(firebaseConfig);
+const db=getDatabase(app);
+const auth=getAuth(app);
+
+const loginScreen=document.getElementById("loginScreen");
+const perfilScreen=document.getElementById("perfilScreen");
+const perfilList=document.getElementById("perfilList");
+const mainHeader=document.getElementById("mainHeader");
+const catalogo=document.getElementById("catalogo");
+const player=document.getElementById("player");
+const busca=document.getElementById("busca");
+const recentesList=document.getElementById("recentesList");
+
+let bancoCompleto={};
+let termoBusca="";
+let perfilAtual="";
+
+/* LOGIN */
+window.login=async()=>{try{await signInWithEmailAndPassword(auth,email.value,senha.value)}catch(e){alert("Erro: "+e.message)}}
+window.cadastrar=async()=>{try{await createUserWithEmailAndPassword(auth,email.value,senha.value);alert("Cadastro realizado!")}catch(e){alert("Erro: "+e.message)}}
+window.logout=async()=>{await signOut(auth);}
+
+/* AUTH STATE */
+onAuthStateChanged(auth,user=>{
+  if(user){loginScreen.classList.add("hidden"); carregarPerfis();}
+  else{loginScreen.classList.remove("hidden"); perfilScreen.classList.add("hidden"); mainHeader.classList.add("hidden"); catalogo.innerHTML=""; recentesList.innerHTML="";}
+})
+
+/* PERFIS */
+async function carregarPerfis(){
+  const uid=auth.currentUser.uid;
+  const snap=await get(ref(db,`usuarios/${uid}/perfis`));
+  if(!snap.exists()){await set(ref(db,`usuarios/${uid}/perfis/Perfil1`),{nome:"Perfil1",avatar:"https://via.placeholder.com/60"});}
+  const dados=(await get(ref(db,`usuarios/${uid}/perfis`))).val();
+  mostrarPerfisTela(dados);
+}
+function mostrarPerfisTela(perfis){
+  perfilList.innerHTML="";
+  Object.keys(perfis).forEach(key=>{
+    const p=perfis[key];
+    const div=document.createElement("div");
+    div.className="perfil-card";
+    div.innerHTML=`<img src="${p.avatar}" alt="${p.nome}"><br>${p.nome}<br><button onclick="excluirPerfil('${key}')">🗑️</button>`;
+    div.onclick=(e)=>{if(e.target.tagName!=="BUTTON"){perfilAtual=key; perfilScreen.classList.add("hidden"); mainHeader.classList.remove("hidden"); listarConteudo(); listarRecentes();}}
+    perfilList.appendChild(div);
+  });
+  perfilScreen.classList.remove("hidden");
+}
+window.novoPerfilPrompt=async function(){
+  const nome=prompt("Nome do perfil:"); if(!nome) return;
+  const avatar=prompt("URL do avatar 60x60 (opcional):")||"https://via.placeholder.com/60";
+  const uid=auth.currentUser.uid;
+  await set(ref(db,`usuarios/${uid}/perfis/${nome}`),{nome,avatar});
+  carregarPerfis();
+}
+window.excluirPerfil=async function(perfil){
+  const uid=auth.currentUser.uid;
+  if(!confirm(`Excluir perfil "${perfil}"?`)) return;
+  await set(ref(db,`usuarios/${uid}/perfis/${perfil}`),null);
+  carregarPerfis();
+}
+
+/* BUSCA */
+busca.addEventListener("input",e=>{ termoBusca=e.target.value.toLowerCase(); listarConteudo(); })
+
+/* LISTAR CATALOGO */
+async function listarConteudo(){
+  catalogo.innerHTML="";
+  const snapshot=await get(ref(db,"/"));
+  bancoCompleto=snapshot.val()||{};
+  Object.keys(bancoCompleto).forEach(nome=>{
+    if(termoBusca && !nome.toLowerCase().includes(termoBusca)){
+      let encontrou=false;
+      Object.values(bancoCompleto[nome]).forEach(nivel=>{
+        if(nivel.url){if(nivel.nome?.toLowerCase().includes(termoBusca)) encontrou=true;}
+        else{Object.values(nivel).forEach(ep=>{if(ep.nome?.toLowerCase().includes(termoBusca)) encontrou=true;});}
+      })
+      if(!encontrou) return;
+    }
+    renderCard(nome);
+  })
+}
+
+/* RENDER CARD */
+async function renderCard(nome){
+  const uid=auth.currentUser.uid;
+  const favSnap=await get(ref(db,`usuarios/${uid}/favoritos/${perfilAtual}/${nome}`));
+  const ehFavorito=favSnap.exists();
+  const dados=bancoCompleto[nome];
+  const primeiroNivel=Object.values(dados)[0];
+  let capa=primeiroNivel.url?primeiroNivel.capa:Object.values(primeiroNivel)[0].capa;
+
+  catalogo.innerHTML+=`
+  <div class="card">
+    <div class="fav-top ${ehFavorito?'favorito':''}" onclick="favoritar('${nome}',event)">❤️</div>
+    <img src="${capa}" alt="${nome}">
+    <h4>${nome}</h4>
+    <button class="assistir" onclick="abrirConteudo('${nome}')">▶ Assistir</button>
+  </div>`;
+}
+
+/* FAVORITOS */
+window.favoritar=async function(nome,event){
+  event.stopPropagation();
+  const uid=auth.currentUser.uid;
+  const refFav=ref(db,`usuarios/${uid}/favoritos/${perfilAtual}/${nome}`);
+  const snap=await get(refFav);
+  if(snap.exists()){await set(refFav,null);}else{await set(refFav,true);}
+  listarConteudo();
+}
+
+/* RANKING */
+window.verRanking=async function(){
+  catalogo.innerHTML="<h2 style='grid-column:1/-1'>🔥 Mais Assistidos</h2>";
+  const snap=await get(ref(db,"ranking"));
+  if(!snap.exists()) return;
+  const rankingArray=Object.entries(snap.val()).sort((a,b)=>b[1]-a[1]);
+  rankingArray.slice(0,20).forEach(([url,views])=>{
+    let nome="Desconhecido",capa="https://via.placeholder.com/220x120";
+    for(const titulo of Object.keys(bancoCompleto)){
+      const dados=bancoCompleto[titulo];
+      const primeiroNivel=Object.values(dados)[0];
+      if(primeiroNivel.url && primeiroNivel.url===url){nome=titulo;capa=primeiroNivel.capa;break;}
+      else if(!primeiroNivel.url){for(const ep of Object.values(primeiroNivel)){if(ep.url===url){nome=ep.nome;capa=ep.capa;break;}}}
+    }
+    catalogo.innerHTML+=`<div class="card"><img src="${capa}"><h4>${nome}</h4><p>${views} views</p></div>`;
+  });
+}
+
+/* ABRIR CONTEUDO */
+window.abrirConteudo=function(nome){
+  catalogo.innerHTML="";
+  const dados=bancoCompleto[nome];
+  const primeiroNivel=Object.values(dados)[0];
+  if(typeof primeiroNivel==="object"&&!primeiroNivel.url){
+    Object.keys(dados).forEach(temp=>{
+      catalogo.innerHTML+=`<h2 style="grid-column:1/-1">${temp}</h2>`;
+      Object.values(dados[temp]).forEach(ep=>{
+        catalogo.innerHTML+=`<div class="card"><div class="fav-top" onclick="favoritar('${ep.nome}',event)">❤️</div><img src="${ep.capa}"><h4>${ep.nome}</h4><button class="assistir" onclick="playVideo('${ep.url}','${ep.nome}','${ep.capa}')">▶ Assistir</button></div>`;
+      })
+    })
+  }else{
+    Object.values(dados).forEach(ep=>{
+      catalogo.innerHTML+=`<div class="card"><div class="fav-top" onclick="favoritar('${ep.nome}',event)">❤️</div><img src="${ep.capa}"><h4>${ep.nome}</h4><button class="assistir" onclick="playVideo('${ep.url}','${ep.nome}','${ep.capa}')">▶ Assistir</button></div>`;
+    })
+  }
+}
+
+/* PLAYER */
+window.playVideo=async function(url,nome,capa){
+  document.getElementById("modalPlayer").classList.remove("hidden");
+  if(url.includes(".m3u8")){if(Hls.isSupported()){const hls=new Hls();hls.loadSource(url);hls.attachMedia(player);}else{player.src=url;}}else{player.src=url;}
+  player.play();
+  adicionarRecente(url,nome,capa);
+  const uid=auth.currentUser.uid;
+  const rankRef=ref(db,`ranking/${url}`);
+  const rankSnap=await get(rankRef);
+  if(rankSnap.exists()){await set(rankRef,rankSnap.val()+1);}else{await set(rankRef,1);}
+}
+
+/* FECHAR PLAYER */
+window.fecharPlayer=function(){player.pause();player.src="";document.getElementById("modalPlayer").classList.add("hidden");}
+
+/* ADICIONAR RECENTES */
+async function adicionarRecente(url,nome,capa){
+  const uid=auth.currentUser.uid;
+  const perfil=perfilAtual;
+  const id=btoa(url);
+  await set(ref(db,`usuarios/${uid}/assistindo/${perfil}/listaRecentes/${id}`),{url,nome,capa,timestamp:Date.now()});
+  listarRecentes();
+}
+
+/* LISTAR RECENTES */
+async function listarRecentes(){
+  const uid=auth.currentUser.uid;
+  const perfil=perfilAtual;
+  const snap=await get(ref(db,`usuarios/${uid}/assistindo/${perfil}/listaRecentes`));
+  const recentes=snap.exists()?snap.val():{};
+  recentesList.innerHTML="";
+  Object.values(recentes).sort((a,b)=>b.timestamp-a.timestamp).forEach(item=>{
+    recentesList.innerHTML+=`<div class="card"><img src="${item.capa}"><h4>${item.nome}</h4><button class="assistir" onclick="playVideo('${item.url}','${item.nome}','${item.capa}')">▶ Assistir</button></div>`;
+  })
+}
+</script>
+</body>
+</html>
