@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Streaming Pro</title>
+
+<style>
+body{margin:0;font-family:Arial;background:#111;color:#fff}
+header{
+  background:#000;
+  padding:15px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:15px;
+  padding:20px;
+}
+
+.card{
+  background:#1c1c1c;
+  border-radius:10px;
+  overflow:hidden;
+  transition:.3s;
+  cursor:pointer;
+}
+.card:hover{transform:scale(1.05)}
+.card img{width:100%;height:200px;object-fit:cover}
+.card h4{margin:0;padding:10px;font-size:14px}
+
+.hidden{display:none!important}
+
+.avatarOption{
+  width:60px;
+  height:60px;
+  border-radius:50%;
+  cursor:pointer;
+  object-fit:cover;
+  transition:.3s;
+  border:2px solid transparent;
+}
+.avatarOption:hover{
+  transform:scale(1.1);
+  border:2px solid red;
+}
+
+.fadeIn{
+  animation:fade .4s ease-in-out;
+}
+@keyframes fade{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+</style>
+</head>
+<body>
+
+<header>
+<div style="display:flex;align-items:center;gap:10px;">
+  <img id="avatarPerfil"
+       onclick="abrirPerfis()"
+       src="https://i.imgur.com/6VBx3io.png"
+       style="width:45px;height:45px;border-radius:50%;cursor:pointer;object-fit:cover;">
+  <div>
+    <strong>Streaming Pro</strong><br>
+    <span id="perfilAtivo"></span>
+  </div>
+</div>
+</header>
+
+<div id="lista" class="grid"></div>
+
+<!-- PERFIS -->
+<div id="modalPerfis" class="hidden" style="
+position:fixed;top:0;left:0;width:100%;height:100%;
+background:#111;z-index:6000;padding:20px;overflow:auto;">
+
+<h2>Perfis</h2>
+<div id="listaPerfis"></div>
+
+<hr>
+<h3>Criar Novo Perfil</h3>
+
+<input id="novoPerfilNome" placeholder="Nome do perfil"><br><br>
+
+<div style="display:flex;gap:10px;margin-bottom:15px;">
+  <img src="https://i.imgur.com/1X6yK0P.png" class="avatarOption">
+  <img src="https://i.imgur.com/6VBx3io.png" class="avatarOption">
+  <img src="https://i.imgur.com/9Xn4K5P.png" class="avatarOption">
+  <img src="https://i.imgur.com/AbcD123.png" class="avatarOption">
+  <img src="https://i.imgur.com/ZXCV987.png" class="avatarOption">
+</div>
+
+<input type="file" id="uploadAvatar" accept="image/*"><br><br>
+
+<button onclick="criarPerfil()">Criar Perfil</button>
+<button onclick="fecharPerfis()">Fechar</button>
+</div>
+
+<!-- PLAYER -->
+<div id="modalPlayer" class="hidden" style="
+position:fixed;top:0;left:0;width:100%;height:100%;
+background:#000;z-index:5000;display:flex;
+flex-direction:column;align-items:center;justify-content:center;">
+
+<button onclick="fecharPlayer()" style="
+position:absolute;top:20px;right:20px;
+background:red;border:none;color:#fff;padding:10px;">X</button>
+
+<video id="player" controls style="width:90%;max-width:900px;"></video>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, onValue, set } 
+from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } 
+from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDrtZxbKXk7hjlqBL_BLoZMTBdc5iqBCXo",
+  authDomain: "ferramentas-projeto.firebaseapp.com",
+  databaseURL: "https://ferramentas-projeto.firebaseio.com/",
+  projectId: "ferramentas-projeto",
+  storageBucket: "ferramentas-projeto.appspot.com",
+  messagingSenderId: "877191590019",
+  appId: "1:877191590019:android:152d4d35bdd3024c53abb6"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+let bancoCompleto = {};
+let perfilAtual = null;
+let avatarSelecionado = "https://i.imgur.com/6VBx3io.png";
+
+const lista = document.getElementById("lista");
+const player = document.getElementById("player");
+
+signInAnonymously(auth);
+
+// ================= PERFIS =================
+window.abrirPerfis = () =>
+  document.getElementById("modalPerfis").classList.remove("hidden");
+
+window.fecharPerfis = () =>
+  document.getElementById("modalPerfis").classList.add("hidden");
+
+document.querySelectorAll(".avatarOption").forEach(img=>{
+  img.onclick = function(){
+    avatarSelecionado = this.src;
+  };
+});
+
+document.getElementById("uploadAvatar")
+.addEventListener("change",function(e){
+  const reader = new FileReader();
+  reader.onload = function(){
+    avatarSelecionado = reader.result;
+  };
+  reader.readAsDataURL(e.target.files[0]);
+});
+
+window.criarPerfil = async function(){
+  if(!auth.currentUser) return alert("Aguarde...");
+  const nome = document.getElementById("novoPerfilNome").value.trim();
+  if(!nome) return alert("Digite nome");
+
+  const uid = auth.currentUser.uid;
+
+  await set(ref(db,`usuarios/${uid}/perfis/${nome}`),{
+    nome:nome,
+    avatar:avatarSelecionado
+  });
+
+  alert("Perfil criado 🚀");
+  document.getElementById("novoPerfilNome").value="";
+};
+
+window.selecionarPerfil = function(nome){
+  perfilAtual = nome;
+  const uid = auth.currentUser.uid;
+
+  onValue(ref(db,`usuarios/${uid}/perfis/${nome}`),(snap)=>{
+    const dados = snap.val();
+    document.getElementById("perfilAtivo").innerText = dados.nome;
+    document.getElementById("avatarPerfil").src = dados.avatar;
+    document.getElementById("avatarPerfil").classList.add("fadeIn");
+  },{onlyOnce:true});
+
+  fecharPerfis();
+};
+
+onAuthStateChanged(auth,(user)=>{
+  if(user){
+    const uid=user.uid;
+
+    onValue(ref(db,`usuarios/${uid}/perfis`),(snap)=>{
+      const perfis=snap.val()||{};
+      let html="";
+      Object.keys(perfis).forEach(nome=>{
+        html+=`
+        <div onclick="selecionarPerfil('${nome}')"
+        style="padding:10px;background:#222;margin:5px 0;cursor:pointer;">
+        ${nome}
+        </div>`;
+      });
+      document.getElementById("listaPerfis").innerHTML=html;
+    });
+  }
+});
+
+// ================= CONTEÚDOS =================
+onValue(ref(db,"/"),(snap)=>{
+  bancoCompleto = snap.val() || {};
+  render();
+});
+
+function render(){
+  lista.innerHTML="";
+
+  Object.keys(bancoCompleto).forEach(nomeSerie=>{
+    if(nomeSerie==="usuarios" || nomeSerie==="ranking") return;
+
+    const serie = bancoCompleto[nomeSerie];
+    const primeiroEp = Object.values(serie)[0];
+    if(!primeiroEp) return;
+
+    lista.innerHTML += `
+      <div class="card" onclick="abrirSerie('${nomeSerie}')">
+        <img src="${primeiroEp.capa}">
+        <h4>${primeiroEp.nome}</h4>
+      </div>
+    `;
+  });
+}
+
+// ================= ABRIR SÉRIE =================
+window.abrirSerie = function(nomeSerie){
+
+  const serie = bancoCompleto[nomeSerie];
+  const episodios = Object.values(serie);
+  const capa = episodios[0].capa;
+
+  let html = `
+  <div style="
+    width:193%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    paddiwid 30px;">
+
+    <!-- CAPA GRANDE -->
+    <img src="${capa}" 
+         style="
+         width:250%;
+         max-width:355px;
+         border-radius:20px;
+         margin-bottom:35px;
+         box-shadow:0 20px 50px rgba(0,0,0,0.7);
+         object-fit:cover;
+         ">
+
+    <!-- TÍTULO -->
+    <h1 style="margin:0;font-size:26px;">
+      ${nomeSerie}
+    </h1>
+
+    <p style="color:#aaa;margin-top:5px;margin-bottom:30px;">
+      ${episodios.length} Episódios
+    </p>
+
+    <!-- GRID EPISÓDIOS -->
+    <div style="
+      width:300%;
+      max-width:400px;
+      display:grid;
+      grid-template-columns:repeat(2,1fr);
+      gap:10px;
+    ">
+  `;
+
+  episodios.forEach(ep=>{
+    html += `
+      <div onclick="playVideo('${ep.url}')"
+      style="
+        background:#1f1f1f;
+        padding:20px;
+        border-radius:15px;
+        cursor:pointer;
+        font-weight:bold;
+        transition:.3s;
+      "
+      onmouseover="this.style.transform='scale(1.07)'"
+      onmouseout="this.style.transform='scale(1)'"
+      >
+        ${ep.Episodio}
+      </div>
+    `;
+  });
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  lista.innerHTML = html;
+};
+
+// ================= PLAYER =================
+window.playVideo = function(url){
+  document.getElementById("modalPlayer")
+    .classList.remove("hidden");
+  player.src = url;
+  player.play();
+};
+
+window.fecharPlayer = function(){
+  player.pause();
+  player.src="";
+  document.getElementById("modalPlayer")
+    .classList.add("hidden");
+};
+</script>
+</body>
+</html>
